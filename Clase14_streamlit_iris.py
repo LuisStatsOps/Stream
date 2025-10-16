@@ -57,4 +57,4 @@ cm = confusion_matrix(y_test, y_pred)
 cm_df = pd.DataFrame(cm, index=target_names, columns=target_names)
 st.dataframe(cm_df)
 
-st.caption("Consejo: para un despliegue real separa el entrenamiento (offline) y carga el modelo pre-entrenado con joblib/pickle.")
+st.caption("Luis Alberto Baca")

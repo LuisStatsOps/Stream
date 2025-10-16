@@ -41,46 +41,63 @@ if not value_cols:
     st.error("Elige al menos una columna numérica para graficar.")
     st.stop()
 
-# --- Parseo determinista de fechas y valores ---
-# (ajusta el formato si tu CSV usa otro, p. ej. '%d/%m/%Y')
-DATE_FORMAT = "%Y-%m-%d"   # cámbialo si corresponde
+# ---- Parámetros deterministas ----
+fmt = st.sidebar.text_input(
+    "Formato de fecha (opcional, ej. %Y-%m-%d o %d/%m/%Y)",
+    value="%Y-%m-%d"  # cambia si tu CSV usa dd/mm/yyyy
+)
+agg = st.sidebar.selectbox(
+    "Si hay fechas duplicadas, ¿cómo agrego?",
+    ["promedio", "suma", "mediana", "mantener todas"]
+)
 
-# Primero limpia strings
-df[date_col] = df[date_col].astype(str).str.strip()
+# ---- Parseo y normalización robusta ----
+raw_dates = df[date_col].astype(str).str.strip()
+
+# Intento 1: usar formato fijo
+dates_parsed = pd.to_datetime(raw_dates, format=fmt, errors="coerce")
+# Si muchas fallan, intento 2: inferencia
+if dates_parsed.isna().mean() > 0.1:
+    dates_parsed = pd.to_datetime(raw_dates, errors="coerce", infer_datetime_format=True)
+
+df["_date_parsed"] = dates_parsed.dt.tz_localize(None)  # quita tz si apareciera
+
+# Valores numéricos (coma decimal, espacios)
 for c in value_cols:
     df[c] = (df[c].astype(str)
                   .str.replace(",", ".", regex=False)
                   .str.replace(" ", "", regex=False))
-
-# Intenta formato fijo; si falla mucho, cae a inferencia robusta
-d_parsed = pd.to_datetime(df[date_col], format=DATE_FORMAT, errors="coerce")
-if d_parsed.isna().mean() > 0.1:
-    d_parsed = pd.to_datetime(df[date_col], errors="coerce", infer_datetime_format=True)
-df[date_col] = d_parsed
-
-for c in value_cols:
     df[c] = pd.to_numeric(df[c], errors="coerce")
 
-# --- Diagnóstico (útil para entender diferencias) ---
-rows_in = len(df)
-rows_bad_date = df[date_col].isna().sum()
-rows_bad_vals = sum(df[c].isna().sum() for c in value_cols)
-st.caption(f"Filas originales: {rows_in} • Fechas inválidas: {rows_bad_date} • Valores inválidos (suma sobre columnas): {rows_bad_vals}")
+# Diagnóstico antes de limpiar
+n0 = len(df)
+bad_date = df["_date_parsed"].isna().sum()
+bad_vals = {c: df[c].isna().sum() for c in value_cols}
+st.caption(f"Filas totales: {n0} • Fechas inválidas: {bad_date} • "
+           f"Valores inválidos: {sum(bad_vals.values())} (por col: {bad_vals})")
 
-# --- Limpieza + orden ---
-df = df.dropna(subset=[date_col] + value_cols).sort_values(date_col).reset_index(drop=True)
+# Limpieza y orden
+df = df.dropna(subset=["_date_parsed"] + value_cols).copy()
+df = df.sort_values("_date_parsed")
 
-# --- Filtro de fechas ---
-min_d, max_d = df[date_col].min().date(), df[date_col].max().date()
-rango = st.sidebar.date_input("Rango de fechas", (min_d, max_d), min_value=min_d, max_value=max_d)
-if isinstance(rango, tuple) and len(rango) == 2:
-    df = df[(df[date_col] >= pd.to_datetime(rango[0])) & (df[date_col] <= pd.to_datetime(rango[1]))]
+# Duplicados por fecha: política explícita
+if agg != "mantener todas":
+    how = {"promedio": "mean", "suma": "sum", "mediana": "median"}[agg]
+    df = df.groupby("_date_parsed", as_index=True)[value_cols].agg(how).sort_index()
 
-# --- Gráfico con matplotlib (sin agregaciones implícitas) ---
+# ---- Gráfico (matplotlib evita agregaciones implícitas) ----
+import matplotlib.pyplot as plt
 st.subheader("Serie(s) seleccionada(s)")
+
+if "_date_parsed" in df.columns:
+    df_plot = df.set_index("_date_parsed")[value_cols]
+else:
+    # ya está agrupado por fecha
+    df_plot = df[value_cols]
+
 fig, ax = plt.subplots()
-df.set_index(date_col)[value_cols].plot(ax=ax)
-ax.set_xlabel(str(date_col))
+df_plot.plot(ax=ax)
+ax.set_xlabel(date_col)
 ax.set_ylabel("valor")
 ax.grid(True)
 st.pyplot(fig)

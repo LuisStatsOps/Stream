@@ -27,8 +27,31 @@ else:
     df = pd.DataFrame({"date": rng, "value": values.round(2)})
 
 # Preparación
-df["date"] = pd.to_datetime(df["date"])
-df = df.sort_values("date").reset_index(drop=True)
+# Parseo tolerante de fechas y valores
+df["date"] = pd.to_datetime(df["date"].astype(str).str.strip(),
+                            errors="coerce",      # no rompas: convierte inválidos a NaT
+                            infer_datetime_format=True,
+                            dayfirst=True)        # útil si tus fechas son dd/mm/yyyy
+
+# Si quedaron NaT (por ejemplo, formato yyyy-mm-dd con dayfirst=True), reintenta al revés
+if df["date"].isna().mean() > 0.5:
+    df["date"] = pd.to_datetime(df["date"].astype(str).str.strip(),
+                                errors="coerce",
+                                infer_datetime_format=True,
+                                dayfirst=False)
+
+# Normaliza 'value' (maneja comas decimales, strings, etc.)
+df["value"] = (
+    df["value"]
+      .astype(str)
+      .str.replace(",", ".", regex=False)   # por si vienen 12,34
+      .str.replace(" ", "", regex=False)
+)
+df["value"] = pd.to_numeric(df["value"], errors="coerce")
+
+# Limpieza final + orden
+df = df.dropna(subset=["date", "value"]).sort_values("date").reset_index(drop=True)
+
 
 # Controles
 st.sidebar.header("Controles")

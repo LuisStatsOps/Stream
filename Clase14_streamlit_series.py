@@ -83,4 +83,4 @@ col1.metric("Promedio", f"{dff['value'].mean():.2f}")
 col2.metric("Mínimo", f"{dff['value'].min():.2f}")
 col3.metric("Máximo", f"{dff['value'].max():.2f}")
 
-st.caption("Tip: puedes exportar gráficos desde el menú de Streamlit o hacer capturas para tu reporte.")
+st.caption("Luis Alberto Baca")
